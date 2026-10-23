@@ -1,0 +1,5 @@
+.local-tools/
+dist/
+game/build/
+.internal_cache/
+.DS_Store
