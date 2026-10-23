@@ -1,0 +1,27 @@
+[project]
+title = Amber Roads
+version = 0.1.0
+
+[bootstrap]
+main_collection = /main/main.collectionc
+
+[display]
+width = 1280
+height = 720
+high_dpi = 1
+vsync = 1
+
+[input]
+game_binding = /input/game.input_bindingc
+
+[script]
+shared_state = 1
+
+[render]
+clear_color_red = 0.09
+clear_color_green = 0.08
+clear_color_blue = 0.07
+
+[graphics]
+default_texture_min_filter = linear
+default_texture_mag_filter = linear

@@ -1,0 +1,220 @@
+-- Overworld screen: draws the hex map, plans routes on click and walks the
+-- caravan along them one hex at a time. All rules live in world/*.lua.
+local Hex = require "world.hex"
+local WorldMap = require "world.world_map"
+local Terrain = require "world.terrain"
+local Caravan = require "world.caravan"
+local Travel = require "world.travel"
+
+local SIZE = 28                    -- hex radius in pixels
+local ORIGIN = vmath.vector3(56, 664, 0) -- centre of the top-left hex
+local STEP_SECONDS = 0.18          -- pause between hexes while travelling
+local PANEL_X = 880
+local FOG = 0.32                   -- brightness of unexplored hexes
+
+local PLACE_COLORS = {
+    city = vmath.vector4(0.96, 0.78, 0.36, 1),
+    waystation = vmath.vector4(0.86, 0.62, 0.42, 1),
+    well = vmath.vector4(0.48, 0.74, 0.92, 1),
+}
+local TEXT = vmath.vector4(0.93, 0.89, 0.80, 1)
+local DIM_TEXT = vmath.vector4(0.70, 0.66, 0.58, 1)
+local WARN = vmath.vector4(0.96, 0.52, 0.38, 1)
+local ROUTE = vmath.vector4(0.98, 0.84, 0.40, 0.9)
+
+local function screen(h)
+    local x, y = Hex.to_pixel(h.q, h.r, SIZE)
+    return vmath.vector3(ORIGIN.x + x, ORIGIN.y - y, 0)
+end
+
+local function to_hex(self, x, y)
+    local a = Hex.from_pixel(x - ORIGIN.x, ORIGIN.y - y, SIZE)
+    return WorldMap.at(self.state.map, a.q, a.r)
+end
+
+local function box(pos, w, h, image, color)
+    local n = gui.new_box_node(pos, vmath.vector3(w, h, 0))
+    gui.set_texture(n, "map")
+    gui.play_flipbook(n, image)
+    gui.set_color(n, color or vmath.vector4(1))
+    return n
+end
+
+local function text(pos, s, color, pivot, scale)
+    local n = gui.new_text_node(pos, s)
+    gui.set_font(n, "default")
+    gui.set_pivot(n, pivot or gui.PIVOT_NW)
+    gui.set_color(n, color or TEXT)
+    if scale then gui.set_scale(n, vmath.vector3(scale, scale, 1)) end
+    return n
+end
+
+local function terrain_color(h, explored)
+    local c = Terrain.get(h.terrain).color
+    local k = explored and 1 or FOG
+    return vmath.vector4(c[1] * k, c[2] * k, c[3] * k, 1)
+end
+
+local function fmt(n) return string.format("%d", math.floor(n + 0.5)) end
+
+local function refresh_map(self)
+    local s = self.state
+    for _, h in ipairs(s.map.list) do
+        local key = Hex.key(h.q, h.r)
+        local explored = Travel.explored(s, h)
+        gui.set_color(self.hexes[key], terrain_color(h, explored))
+        local marker = self.places[key]
+        if marker then
+            local known = Travel.known_place(s, h) ~= nil
+            gui.set_enabled(marker.dot, known)
+            gui.set_enabled(marker.label, known)
+        end
+    end
+    -- Route dots.
+    for _, n in ipairs(self.route_nodes) do gui.delete_node(n) end
+    self.route_nodes = {}
+    if s.route then
+        for i, h in ipairs(s.route.hexes) do
+            local last = i == #s.route.hexes
+            local d = box(screen(h), last and 18 or 9, last and 18 or 9, "dot", ROUTE)
+            self.route_nodes[#self.route_nodes + 1] = d
+        end
+    end
+    gui.set_position(self.caravan, screen(s.position))
+end
+
+local function resource_line(name, value, max, warn)
+    return string.format("%-11s %s / %s%s", name, fmt(value), fmt(max), warn and "  !" or "")
+end
+
+local function refresh_panel(self)
+    local s, c = self.state, self.state.caravan
+    local lines = {
+        string.format("Turn %d    %s", s.turn, s.position.place and s.position.place.name or Terrain.get(s.position.terrain).name),
+        "",
+        resource_line("Water", c.water, c.water_max, c.thirst > 0),
+        resource_line("Provisions", c.provisions, c.provisions_max, c.starving > 0),
+        resource_line("Fodder", c.fodder, c.fodder_max, c.hunger > 0),
+        string.format("%-11s %s", "Morale", fmt(c.morale)),
+        string.format("%-11s %s%%", "Wagons", fmt(c.condition)),
+        string.format("%-11s %d crew, %d horses, %d hauler", "Company", c.crew, c.horses, c.haulers),
+        Caravan.slowed(c) and "Too few draft beasts: every hex costs +1 turn" or "",
+    }
+    gui.set_text(self.status, table.concat(lines, "\n"))
+
+    local r = s.route
+    if r then
+        local p = r.preview
+        local plan = {
+            string.format("Route to %s  (%s)", Travel.known_place(s, r.goal) and r.goal.place.name or Terrain.get(r.goal.terrain).name,
+                r.mode == "roads" and "prefer roads" or "fastest"),
+            string.format("%d hexes, %d turns, danger %s", #r.hexes, p.turns,
+                p.danger > 0 and tostring(p.danger) or "?"),
+            string.format("Arrive with water %s, provisions %s, fodder %s", fmt(p.finish.water), fmt(p.finish.provisions), fmt(p.finish.fodder)),
+        }
+        if p.unknown > 0 then plan[#plan + 1] = string.format("%d hexes unexplored: supplies there unknown", p.unknown) end
+        for _, e in ipairs(p.warnings) do plan[#plan + 1] = string.format("Turn +%d: %s", e.turn, e.text) end
+        for _, e in ipairs(p.losses) do plan[#plan + 1] = string.format("Turn +%d: %s", e.turn, e.text) end
+        plan[#plan + 1] = ""
+        plan[#plan + 1] = "Click it again or press Space to travel."
+        gui.set_text(self.plan, table.concat(plan, "\n"))
+        gui.set_color(self.plan, (#p.losses > 0) and WARN or TEXT)
+    else
+        gui.set_text(self.plan, string.format("Click a hex to plan a route (%s).\nR switches fastest / prefer roads.\nEsc cancels.",
+            self.mode == "roads" and "prefer roads" or "fastest"))
+        gui.set_color(self.plan, DIM_TEXT)
+    end
+
+    local recent = {}
+    for i = math.max(1, #s.log - 6), #s.log do
+        local e = s.log[i]
+        recent[#recent + 1] = string.format("Turn %d  %s", e.turn, e.text)
+    end
+    gui.set_text(self.log, table.concat(recent, "\n"))
+end
+
+local function refresh(self)
+    refresh_map(self)
+    refresh_panel(self)
+end
+
+local function replan(self, goal)
+    if goal then Travel.plan(self.state, goal.q, goal.r, self.mode) else Travel.cancel(self.state) end
+    refresh(self)
+end
+
+function init(self)
+    msg.post(".", "acquire_input_focus")
+    self.state = Travel.new(WorldMap.build(require "world.map_data"))
+    self.mode = "fastest"
+    self.timer = 0
+    self.travelling = false
+    self.hexes, self.places, self.route_nodes = {}, {}, {}
+
+    local w, h = Hex.SQRT3 * SIZE, 2 * SIZE
+    for _, hx in ipairs(self.state.map.list) do
+        self.hexes[Hex.key(hx.q, hx.r)] = box(screen(hx), w - 1, h - 1, "hex")
+    end
+    for _, place in pairs(self.state.map.places) do
+        local pos = screen(place)
+        local dot = box(pos, place.kind == "city" and 20 or 13, place.kind == "city" and 20 or 13, "dot", PLACE_COLORS[place.kind])
+        local label = text(pos + vmath.vector3(0, 30, 0), place.name, TEXT, gui.PIVOT_S, 0.8)
+        self.places[Hex.key(place.q, place.r)] = { dot = dot, label = label }
+    end
+    self.caravan = box(screen(self.state.position), 16, 16, "dot", vmath.vector4(0.62, 0.16, 0.12, 1))
+
+    text(vmath.vector3(40, 708, 0), self.state.map.name, TEXT)
+    self.status = text(vmath.vector3(PANEL_X, 690, 0), "", TEXT)
+    self.plan = text(vmath.vector3(PANEL_X, 470, 0), "", TEXT)
+    gui.set_size(self.plan, vmath.vector3(380, 400, 0))
+    gui.set_line_break(self.plan, true)
+    self.hover = text(vmath.vector3(40, 205, 0), "", DIM_TEXT)
+    self.log = text(vmath.vector3(40, 180, 0), "", DIM_TEXT)
+    refresh(self)
+end
+
+function update(self, dt)
+    if not self.travelling then return end
+    self.timer = self.timer - dt
+    if self.timer > 0 then return end
+    self.timer = STEP_SECONDS
+    local entries = Travel.step(self.state)
+    -- Stop on arrival, and pause on news so the player can change course.
+    if not entries or not self.state.route or Travel.interrupts(entries) then self.travelling = false end
+    refresh(self)
+end
+
+local function describe(self, h)
+    local t = Terrain.get(h.terrain)
+    local explored = Travel.explored(self.state, h)
+    local place = Travel.known_place(self.state, h)
+    local parts = { t.name, string.format("move %d", t.move) }
+    parts[#parts + 1] = explored and string.format("danger %d", t.danger) or "unexplored"
+    if place then parts[#parts + 1] = place.name .. ": " .. place.text end
+    return table.concat(parts, "  |  ")
+end
+
+function on_input(self, action_id, action)
+    if action_id == nil then
+        local h = action.x and to_hex(self, action.x, action.y)
+        gui.set_text(self.hover, h and describe(self, h) or "")
+        return
+    end
+    if not action.pressed or self.travelling then return end
+    local route = self.state.route
+    if action_id == hash("click") then
+        local h = to_hex(self, action.x, action.y)
+        if not h then return end
+        if route and route.goal == h then self.travelling = true; self.timer = 0
+        else replan(self, h) end
+    elseif action_id == hash("travel") and route then
+        self.travelling = true; self.timer = 0
+    elseif action_id == hash("cancel") then
+        replan(self, nil)
+    elseif action_id == hash("mode") then
+        self.mode = self.mode == "fastest" and "roads" or "fastest"
+        replan(self, route and route.goal)
+        if not route then refresh(self) end
+    end
+    return true
+end

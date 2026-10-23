@@ -1,0 +1,5 @@
+mouse_trigger { input: MOUSE_BUTTON_1 action: "click" }
+key_trigger { input: KEY_SPACE action: "travel" }
+key_trigger { input: KEY_ENTER action: "travel" }
+key_trigger { input: KEY_ESC action: "cancel" }
+key_trigger { input: KEY_R action: "mode" }

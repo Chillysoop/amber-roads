@@ -1,0 +1,14 @@
+name: "main"
+embedded_instances {
+  id: "overworld"
+  data: "components {\n"
+  "  id: \"map\"\n"
+  "  component: \"/main/map.gui\"\n"
+  "}\n"
+  ""
+  position {
+    x: 0.0
+    y: 0.0
+    z: 0.0
+  }
+}
