@@ -16,14 +16,15 @@ return {
         "sssssssssssssssd",
         "ssssssssssssssss",
     },
-    -- Points of interest, in offset coordinates.
+    -- Points of interest, in offset coordinates. Horned House law bans the
+    -- slave trade in Corrund; Talonmere and Ashfall look the other way.
     places = {
         { id = "corrund", name = "Corrund", kind = "city", col = 1, row = 5,
           text = "Horned House stone city" },
         { id = "talonmere", name = "Talonmere", kind = "city", col = 14, row = 4,
-          text = "Talon brokerage port" },
+          text = "Talon brokerage port", slave_market = true },
         { id = "ashfall", name = "Ashfall Wells", kind = "city", col = 6, row = 8,
-          text = "Frontier waystation town" },
+          text = "Frontier waystation town", slave_market = true },
         { id = "fernwatch", name = "Fernwatch", kind = "waystation", col = 4, row = 2,
           text = "Warden post on the Accord road" },
         { id = "oldfort", name = "Old Accord Fort", kind = "waystation", col = 10, row = 1,

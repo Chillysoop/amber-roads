@@ -8,6 +8,7 @@ local Caravan = require "world.caravan"
 local Route = require "world.route"
 local Market = require "world.market"
 local Contracts = require "world.contracts"
+local Crew = require "world.crew"
 
 local M = {}
 
@@ -50,7 +51,10 @@ end
 -- Runs a caravan copy along a route. Used for previews.
 local function simulate(state, route)
     local c = Caravan.copy(state.caravan)
-    if M.city(state) then Caravan.restock(c, "city") end
+    if M.city(state) then
+        Crew.settle(c)
+        Caravan.restock(c, "city")
+    end
     local result = {
         turns = 0, hexes = #route, losses = {}, warnings = {}, danger = 0, unknown = 0,
         start = Caravan.copy(c),
@@ -103,10 +107,11 @@ function M.step(state)
     local route = state.route
     if not route or #route.hexes == 0 then return nil end
     local entries = {}
-    -- Cities restock on the way out, so you sell before you pay for supplies.
+    -- Cities settle wages and restock on the way out, so you sell before you pay.
     local city = M.city(state)
     if city then
         local restock = {}
+        Crew.settle(state.caravan, restock)
         Caravan.restock(state.caravan, "city", restock)
         for _, e in ipairs(restock) do e.turn = state.turn; entries[#entries + 1] = e end
     end
@@ -142,6 +147,7 @@ function M.step(state)
             Caravan.restock(state.caravan, h.place.kind, restock)
             for _, e in ipairs(restock) do e.turn = state.turn; entries[#entries + 1] = e end
         else
+            Crew.walkouts(state.caravan, entries)
             Contracts.deliver(state, h.place.id, entries)
             Contracts.offer(state, h.place.id)
         end

@@ -1,4 +1,5 @@
 local Caravan = require "world.caravan"
+local Crew = require "world.crew"
 
 return {
     { "steppe upkeep uses half again as much water as the road", function()
@@ -42,13 +43,13 @@ return {
     { "four hungry turns cost a crew member", function()
         local c = Caravan.new({ provisions = 0, morale = 100 })
         for _ = 1, 3 do Caravan.turn(c, "road") end
-        assert(c.crew == 8)
+        assert(Crew.free(c) == 8)
         Caravan.turn(c, "road")
-        assert(c.crew == 7 and c.morale == 76, c.crew .. " " .. c.morale)
+        assert(Crew.free(c) == 7 and c.morale == 76, Crew.free(c) .. " " .. c.morale)
     end },
     { "broken morale makes guards desert, and morale never drops below zero", function()
         local c = Caravan.new({ provisions = 0, morale = 5 })
         Caravan.turn(c, "road")
-        assert(c.morale == 0 and c.crew == 7)
+        assert(c.morale == 0 and Crew.free(c) == 7)
     end },
 }
