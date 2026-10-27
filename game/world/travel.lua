@@ -6,6 +6,8 @@ local WorldMap = require "world.world_map"
 local Terrain = require "world.terrain"
 local Caravan = require "world.caravan"
 local Route = require "world.route"
+local Market = require "world.market"
+local Contracts = require "world.contracts"
 
 local M = {}
 
@@ -28,23 +30,32 @@ function M.known_place(state, h)
     return h.place and M.explored(state, h) and h.place or nil
 end
 
-function M.new(map, caravan)
+function M.new(map, caravan, seed)
     local state = {
         map = map, caravan = caravan or Caravan.new(), explored = {},
         turn = 0, position = WorldMap.at(map, map.start.q, map.start.r), route = nil, log = {},
+        market = Market.new(map, seed), contracts = Contracts.new(),
     }
     M.reveal(state, state.position)
+    Contracts.offer(state, map.start.id)
     return state
+end
+
+-- The city the caravan is standing in, if any.
+function M.city(state)
+    local p = state.position.place
+    return p and p.kind == "city" and p or nil
 end
 
 -- Runs a caravan copy along a route. Used for previews.
 local function simulate(state, route)
     local c = Caravan.copy(state.caravan)
+    if M.city(state) then Caravan.restock(c, "city") end
     local result = {
         turns = 0, hexes = #route, losses = {}, warnings = {}, danger = 0, unknown = 0,
         start = Caravan.copy(c),
     }
-    for _, h in ipairs(route) do
+    for i, h in ipairs(route) do
         local turns = Caravan.move_cost(c, h.terrain)
         for _ = 1, turns do
             local log = Caravan.turn(c, h.terrain)
@@ -58,7 +69,8 @@ local function simulate(state, route)
         if M.explored(state, h) then
             result.danger = math.max(result.danger, Terrain.get(h.terrain).danger)
             local place = M.known_place(state, h)
-            if place then Caravan.refill(c, place.kind) end
+            -- A city restocks when you leave it, so only one passed through counts.
+            if place and (place.kind ~= "city" or i < #route) then Caravan.restock(c, place.kind) end
         else
             result.unknown = result.unknown + 1
         end
@@ -90,14 +102,23 @@ end
 function M.step(state)
     local route = state.route
     if not route or #route.hexes == 0 then return nil end
-    local h = table.remove(route.hexes, 1)
     local entries = {}
+    -- Cities restock on the way out, so you sell before you pay for supplies.
+    local city = M.city(state)
+    if city then
+        local restock = {}
+        Caravan.restock(state.caravan, "city", restock)
+        for _, e in ipairs(restock) do e.turn = state.turn; entries[#entries + 1] = e end
+    end
+    local h = table.remove(route.hexes, 1)
     local turns = Caravan.move_cost(state.caravan, h.terrain)
     for _ = 1, turns do
         state.turn = state.turn + 1
         local log = Caravan.turn(state.caravan, h.terrain)
         for _, e in ipairs(log) do e.turn = state.turn; entries[#entries + 1] = e end
+        Contracts.expire(state, entries)
     end
+    Market.tick(state.market, turns)
     state.position = h
     local known = {}
     for id, place in pairs(state.map.places) do
@@ -116,9 +137,14 @@ function M.step(state)
     end
     if h.place then
         entries[#entries + 1] = { kind = "arrive", turn = state.turn, text = "Reached " .. h.place.name .. "." }
-        local refill = {}
-        Caravan.refill(state.caravan, h.place.kind, refill)
-        for _, e in ipairs(refill) do e.turn = state.turn; entries[#entries + 1] = e end
+        if h.place.kind ~= "city" then
+            local restock = {}
+            Caravan.restock(state.caravan, h.place.kind, restock)
+            for _, e in ipairs(restock) do e.turn = state.turn; entries[#entries + 1] = e end
+        else
+            Contracts.deliver(state, h.place.id, entries)
+            Contracts.offer(state, h.place.id)
+        end
     end
     note(state, entries)
     if #route.hexes == 0 then state.route = nil

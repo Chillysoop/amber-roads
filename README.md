@@ -18,6 +18,8 @@ The first run downloads the pinned Defold tools (Bob 1.13.2 and a Temurin 25 JDK
 
 **Controls:** click a hex to plan a route and read its preview, then click it again or press Space to travel. R switches between the fastest route and preferring the Accord road. Esc cancels. Travel pauses when you spot a new place or run short of something.
 
+**Trade:** in a city, the market panel buys and sells five goods priced on a 10-step supply scale (glut to dire), and your own trading moves the price. You can also repair wagons, hire guards, buy horses, and take delivery contracts with a deadline. Leaving a city restocks water, fodder and provisions at city prices, so sell first. A good first run: buy amber in Corrund and carry it to Talonmere along the Accord road.
+
 ## Tests
 
 ```sh
@@ -31,7 +33,7 @@ Tests run headless in the LuaJIT that ships inside Bob, so they match the engine
 
 | Path | What it holds |
 | --- | --- |
-| `game/world/` | Pure Lua rules: hex math, terrain, the map, caravan upkeep, routes and travel. No engine calls. |
+| `game/world/` | Pure Lua rules: hex math, terrain, the map, caravan upkeep, routes, travel, markets and contracts. No engine calls. |
 | `game/main/` | The Defold screen that draws the map and handles input. |
 | `game/tests/` | Headless tests for everything in `world/`. |
 | `scripts/defold.sh` | Project-local toolchain: test, build, bundle, run. |
