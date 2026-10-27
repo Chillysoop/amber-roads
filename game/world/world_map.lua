@@ -21,7 +21,7 @@ function M.build(data)
         local a = Hex.from_offset(p.col, p.row)
         local h = assert(map.hexes[Hex.key(a.q, a.r)], "Place off the map: " .. p.id)
         assert(not h.place, "Two places share a hex: " .. p.id)
-        local place = { id = p.id, name = p.name, kind = p.kind, text = p.text, q = a.q, r = a.r }
+        local place = { id = p.id, name = p.name, kind = p.kind, text = p.text, q = a.q, r = a.r, slave_market = p.slave_market }
         h.place = place
         map.places[p.id] = place
     end

@@ -7,6 +7,7 @@ local Caravan = require "world.caravan"
 local Travel = require "world.travel"
 local Market = require "world.market"
 local Contracts = require "world.contracts"
+local Crew = require "world.crew"
 
 local SIZE = 28                    -- hex radius in pixels
 local ORIGIN = vmath.vector3(56, 664, 0) -- centre of the top-left hex
@@ -152,15 +153,37 @@ local function build_city(self)
         local ok, cost = Market.repair(self.state.caravan)
         say(self, ok and string.format("Wagons repaired for %d coin.", cost) or "Not enough coin to repair.")
     end)
-    city.guard = button(self, 1064, sy + 2, 100, "", function()
-        Market.hire(self.state.caravan, "guard")
-        say(self, "A new guard signs on.")
-    end)
-    city.horse = button(self, 1168, sy + 2, 102, "", function()
+    city.horse = button(self, 1064, sy + 2, 100, "", function()
         Market.hire(self.state.caravan, "horse")
         say(self, "You buy a horse.")
     end)
-    local cy = sy - ROW - 8
+    -- Crew rows: label on the left, three button slots on the right.
+    local function crew_row(row_y, label, slots)
+        local row = { label = text(vmath.vector3(x, row_y, 0), label, DIM_TEXT, nil, SMALL) }
+        for i, slot in ipairs(slots) do
+            row[i] = button(self, 960 + (i - 1) * 104, row_y + 2, i == 3 and 102 or 100, "", function()
+                local ok, why = slot.act(self.state.caravan)
+                say(self, ok and slot.done or why .. ".")
+            end)
+        end
+        return row
+    end
+    local hy = sy - ROW
+    city.hire = crew_row(hy, "Hire", {
+        { act = function(c) return Crew.hire(c, "worker") end, done = "A worker signs on." },
+        { act = function(c) return Crew.hire(c, "guard") end, done = "A guard signs on." },
+        { act = function(c) return Crew.hire(c, "scout") end, done = "A scout signs on." },
+    })
+    city.bonds = crew_row(hy - ROW, "Bonds", {
+        { act = Crew.buy_out_bond, done = "You pay off a bond. They stay on as a free worker, and they remember it." },
+        { act = Crew.sell_bond, done = "You sell a bond to the brokers. The crew watches them led away." },
+    })
+    city.slaves = crew_row(hy - 2 * ROW, "Slaves", {
+        { act = Crew.buy_slave, done = "You buy a slave." },
+        { act = Crew.sell_slave, done = "You sell a slave." },
+        { act = Crew.free_slave, done = "You strike off a slave's chains. They choose to stay on as a paid worker." },
+    })
+    local cy = hy - 3 * ROW - 8
     city.contracts = text(vmath.vector3(x, cy, 0), "Contracts on offer", DIM_TEXT, nil, SMALL)
     for i = 1, Contracts.tuning.offers_per_city do
         local oy = cy - i * ROW
@@ -176,7 +199,8 @@ local function build_city(self)
     city.footer = text(vmath.vector3(x, 60, 0), "", DIM_TEXT, nil, SMALL)
     gui.set_size(city.footer, vmath.vector3(390, 80, 0))
     gui.set_line_break(city.footer, true)
-    city.texts = { city.title, city.header, city.services, city.contracts, city.active, city.footer }
+    city.texts = { city.title, city.header, city.services, city.contracts, city.active, city.footer,
+        city.hire.label, city.bonds.label, city.slaves.label }
     for _, r in ipairs(city.rows) do city.texts[#city.texts + 1] = r.line end
     for _, o in ipairs(city.offers) do city.texts[#city.texts + 1] = o.line end
 end
@@ -211,8 +235,18 @@ local function refresh_city(self, visible)
     end
     local repair = Market.repair_cost(c)
     show_button(city.repair, true, repair > 0 and c.coin >= repair, repair > 0 and string.format("Repair %d", repair) or "Wagons sound")
-    show_button(city.guard, true, c.coin >= Market.services.guard.price, string.format("Guard %d", Market.services.guard.price))
     show_button(city.horse, true, c.coin >= Market.services.horse.price, string.format("Horse %d", Market.services.horse.price))
+    for i, id in ipairs({ "worker", "guard", "scout" }) do
+        local price = Crew.by_id[id].hire
+        show_button(city.hire[i], true, c.coin >= price, string.format("%s %d", (Crew.by_id[id].name:gsub("^%l", string.upper)), price))
+    end
+    local t, bonded, slaves = Crew.tuning, c.roster.bonded or 0, c.roster.slave or 0
+    show_button(city.bonds[1], true, bonded > 0 and c.coin >= t.bond_buyout, string.format("Buy out %d", t.bond_buyout))
+    show_button(city.bonds[2], true, bonded > 0, string.format("Sell bond %d", t.bond_sale))
+    local market = here.slave_market
+    show_button(city.slaves[1], true, market and c.coin >= t.slave_price, market and string.format("Buy %d", t.slave_price) or "Banned here")
+    show_button(city.slaves[2], true, market and slaves > 0, market and string.format("Sell %d", t.slave_sale) or "Banned here")
+    show_button(city.slaves[3], true, slaves > 0, "Free one")
     for i, entry in ipairs(city.offers) do
         local o = s.contracts.offers[i]
         entry.offer = o
@@ -230,19 +264,31 @@ local function refresh_city(self, visible)
     end
     gui.set_text(city.active, table.concat(active, "\n"))
     gui.set_text(city.footer, (city.notice and city.notice .. "\n" or "") ..
-        "Leaving restocks water, fodder and provisions at city prices. Click a hex to plan a route.")
+        "Leaving pays wages, then restocks water, fodder and provisions at city prices. Click a hex to plan a route.")
+end
+
+local ROSTER_SHORT = { worker = "wrk", guard = "grd", scout = "sct", bonded = "bond", slave = "slv" }
+local function roster_line(c)
+    local parts = {}
+    for _, t in ipairs(Crew.types) do
+        local n = c.roster[t.id] or 0
+        if n > 0 then parts[#parts + 1] = n .. " " .. ROSTER_SHORT[t.id] end
+    end
+    return table.concat(parts, "  ")
 end
 
 local function refresh_panel(self)
     local s, c = self.state, self.state.caravan
     local lines = {
         string.format("Turn %d    %s", s.turn, s.position.place and s.position.place.name or Terrain.get(s.position.terrain).name),
-        "",
         resource_line("Water", c.water, c.water_max, c.thirst > 0),
         resource_line("Provisions", c.provisions, c.provisions_max, c.starving > 0),
         resource_line("Fodder", c.fodder, c.fodder_max, c.hunger > 0),
         string.format("%-11s %-6s Wagons %s%%", "Morale", fmt(c.morale), fmt(c.condition)),
-        string.format("%-11s %d crew, %d horses, %d hauler", "Company", c.crew, c.horses, c.haulers),
+        string.format("%-11s %s", "Crew", roster_line(c)),
+        string.format("%-11s %s / %s hands, %d horses, %d hauler", "", fmt(Crew.labour(c)), fmt(math.ceil(Crew.labour_need(c))), c.horses, c.haulers),
+        string.format("%-11s %-6s Standing %+d%s", "Wages due", fmt(c.wages_due), c.standing,
+            (c.roster.slave or 0) > 0 and string.format("  Obedience %d", c.obedience) or ""),
         string.format("%-11s %-6d Cargo %d / %d", "Coin", c.coin, Caravan.cargo_used(c), Caravan.capacity(c)),
         Caravan.slowed(c) and "Too few draft beasts: every hex costs +1 turn" or "",
     }

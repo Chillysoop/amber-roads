@@ -76,12 +76,11 @@ return {
         for _, e in ipairs(log) do if e.text:find("Could not afford", 1, true) then short = true end end
         assert(short)
     end },
-    { "services cost coin: repair, guards and horses", function()
+    { "services cost coin: repair and horses", function()
         local c = Caravan.new({ condition = 90, coin = 100 })
         local ok, cost = Market.repair(c)
         assert(ok and cost == 20 and c.condition == 100 and c.coin == 80)
-        assert(Market.hire(c, "guard") and c.crew == 9 and c.coin == 50)
-        assert(Market.hire(c, "horse") and c.horses == 7 and c.coin == 5)
-        assert(not Market.hire(c, "guard") and c.coin == 5, "too poor for another guard")
+        assert(Market.hire(c, "horse") and c.horses == 7 and c.coin == 35)
+        assert(not Market.hire(c, "horse") and c.coin == 35, "too poor for a second horse")
     end },
 }

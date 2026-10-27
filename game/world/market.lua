@@ -141,11 +141,10 @@ end
 -- City services. Prices are flat for the slice.
 M.services = {
     repair = { name = "Repair wagons", per_point = 2 },
-    guard = { name = "Hire a guard", price = 30 },
     horse = { name = "Buy a horse", price = 45 },
 }
 
-function M.repair_cost(c) return (100 - c.condition) * M.services.repair.per_point end
+function M.repair_cost(c) return math.ceil((100 - c.condition) * M.services.repair.per_point - 1e-9) end
 
 function M.repair(c)
     local cost = M.repair_cost(c)
@@ -159,7 +158,7 @@ function M.hire(c, what)
     local s = assert(M.services[what], "Unknown service " .. tostring(what))
     if c.coin < s.price then return false end
     c.coin = c.coin - s.price
-    if what == "guard" then c.crew = c.crew + 1 else c.horses = c.horses + 1 end
+    c.horses = c.horses + 1
     return true, s.price
 end
 

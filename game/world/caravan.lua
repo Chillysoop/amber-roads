@@ -1,6 +1,7 @@
 -- The caravan's body: people, beasts, wagons and the five pressures.
 -- Upkeep runs once per turn. Everything here is deterministic.
 local Terrain = require "world.terrain"
+local Crew = require "world.crew"
 
 local M = {}
 
@@ -19,13 +20,14 @@ M.draft_per_wagon = 2
 
 function M.new(overrides)
     local c = {
-        crew = 8, horses = 6, haulers = 1, wagons = 3,
+        roster = Crew.new(), horses = 6, haulers = 1, wagons = 3,
         water = 60, water_max = 60,
         provisions = 60, provisions_max = 60,
         fodder = 40, fodder_max = 40,
         condition = 100, morale = 70,
         thirst = 0, hunger = 0, starving = 0,
         coin = 300, cargo = {},
+        obedience = 60, standing = 0, wages_due = 0, arrears = 0,
     }
     for k, v in pairs(overrides or {}) do c[k] = v end
     return c
@@ -34,6 +36,7 @@ end
 function M.copy(c)
     local out = {}
     for k, v in pairs(c) do out[k] = v end
+    out.roster = Crew.copy(c.roster)
     out.cargo = {}
     for k, v in pairs(c.cargo or {}) do out.cargo[k] = v end
     return out
@@ -61,8 +64,8 @@ end
 function M.needs(c, terrain_id)
     local t, r = Terrain.get(terrain_id), M.rates
     return {
-        provisions = tenth(c.crew * r.provisions_per_crew * t.provisions),
-        water = tenth((c.crew * r.water_per_crew + M.animals(c) * r.water_per_animal) * t.water),
+        provisions = tenth(Crew.mouths(c) * r.provisions_per_crew * t.provisions),
+        water = tenth((Crew.mouths(c) * r.water_per_crew + M.animals(c) * r.water_per_animal) * t.water),
         fodder = tenth(M.animals(c) * r.fodder_per_animal * t.fodder),
     }
 end
@@ -74,13 +77,6 @@ local function lose_animal(c, cause, log)
     elseif c.haulers > 0 then
         c.haulers = c.haulers - 1
         log[#log + 1] = { kind = "loss", text = "The ankylosaur hauler collapsed from " .. cause .. "." }
-    end
-end
-
-local function lose_crew(c, text, log)
-    if c.crew > 1 then
-        c.crew = c.crew - 1
-        log[#log + 1] = { kind = "loss", text = text }
     end
 end
 
@@ -112,11 +108,14 @@ function M.turn(c, terrain_id, log)
     else
         c.provisions = 0; c.starving = c.starving + 1; morale(c, -6)
         if c.starving == 1 then log[#log + 1] = { kind = "warning", text = "The last of the provisions is gone." } end
-        if c.starving >= M.limits.starving then lose_crew(c, "A starving guard slipped away in the night.", log) end
+        if c.starving >= M.limits.starving then Crew.lose(c, log, "A starving %s slipped away in the night.") end
     end
 
-    c.condition = math.max(0, c.condition - Terrain.get(terrain_id).wear)
-    if c.morale == 0 then lose_crew(c, "With morale broken, a guard deserted.", log) end
+    -- Short-handed wagons wear faster: half again as fast with half the hands missing.
+    local wear = Terrain.get(terrain_id).wear * (1 + Crew.shorthanded(c))
+    c.condition = math.max(0, c.condition - wear)
+    morale(c, Crew.turn(c, log, c.thirst > 0 or c.starving > 0))
+    if c.morale == 0 then Crew.lose(c, log, "With morale broken, a %s deserted.") end
     return log
 end
 

@@ -20,6 +20,8 @@ The first run downloads the pinned Defold tools (Bob 1.13.2 and a Temurin 25 JDK
 
 **Trade:** in a city, the market panel buys and sells five goods priced on a 10-step supply scale (glut to dire), and your own trading moves the price. You can also repair wagons, hire guards, buy horses, and take delivery contracts with a deadline. Leaving a city restocks water, fodder and provisions at city prices, so sell first. A good first run: buy amber in Corrund and carry it to Talonmere along the Accord road.
 
+**Crew:** the company is workers (haul), guards (fight, and watch slaves), scouts and debt-bonded crew, who work cheap. Wages build up on the road and are paid when you leave a city. If you can't pay, hirelings quit at the next city. Too few hands for your wagons makes them wear faster. Slaves eat less, draw no wage and haul, but they need one guard per three or their obedience falls and they flee. Slaves can only be bought and sold in Talonmere and Ashfall Wells. Buying out or selling bonds, and buying, selling or freeing slaves, moves your standing between liberation and infamy.
+
 ## Tests
 
 ```sh
@@ -33,7 +35,7 @@ Tests run headless in the LuaJIT that ships inside Bob, so they match the engine
 
 | Path | What it holds |
 | --- | --- |
-| `game/world/` | Pure Lua rules: hex math, terrain, the map, caravan upkeep, routes, travel, markets and contracts. No engine calls. |
+| `game/world/` | Pure Lua rules: hex math, terrain, the map, caravan upkeep, routes, travel, markets, contracts and crew. No engine calls. |
 | `game/main/` | The Defold screen that draws the map and handles input. |
 | `game/tests/` | Headless tests for everything in `world/`. |
 | `scripts/defold.sh` | Project-local toolchain: test, build, bundle, run. |
