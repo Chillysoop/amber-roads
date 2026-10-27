@@ -6,7 +6,9 @@ Design docs: [scoping](https://claude.ai/artifact/Pe5xPKE2Kmpev5gykUM5kh) and [v
 
 ## Play
 
-macOS or Linux:
+The easiest way is the self-updating launcher: install it once and the Desktop shortcut always runs the current `main`. See [launcher/README.md](launcher/README.md).
+
+To build and run from source on macOS or Linux:
 
 ```sh
 ./scripts/defold.sh run
@@ -33,3 +35,5 @@ Tests run headless in the LuaJIT that ships inside Bob, so they match the engine
 | `game/main/` | The Defold screen that draws the map and handles input. |
 | `game/tests/` | Headless tests for everything in `world/`. |
 | `scripts/defold.sh` | Project-local toolchain: test, build, bundle, run. |
+| `scripts/package-desktop.sh` | Bundles every desktop platform for the rolling `main-latest` release. |
+| `launcher/` | Self-updating launchers and their one-line installers. |
