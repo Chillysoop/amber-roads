@@ -19,6 +19,7 @@ command -v zip >/dev/null 2>&1 || { echo 'Install zip and retry.' >&2; exit 1; }
 commit=${GITHUB_SHA:-$(git -C "$repo_dir" rev-parse HEAD)}
 version=$(sed -n 's/^version *= *//p' "$repo_dir/game/game.project" | head -n 1)
 mkdir -p "$out_dir"
+out_dir=$(CDPATH= cd -P "$out_dir" && pwd)  # zip runs from inside each bundle folder
 rm -f "$out_dir"/amber-roads-*.zip "$out_dir/build.txt"
 
 {
