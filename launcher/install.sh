@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs the self-updating Amber Roads launcher.
-#   macOS: ~/Applications/Amber Roads.app (Launchpad, Spotlight, Dock)
-#   Linux: ~/.local/bin/amber-roads plus a desktop menu entry
+#   macOS: ~/Applications/Amber Roads.app (Launchpad, Spotlight, Dock) plus a Desktop shortcut
+#   Linux: ~/.local/bin/amber-roads plus menu and Desktop entries
 # Run with:
 #   curl -fsSL https://raw.githubusercontent.com/Chillysoop/amber-roads/main/launcher/install.sh | sh
 set -eu
@@ -36,7 +36,13 @@ case "$(uname -s)" in
 </dict>
 </plist>
 PLIST
-    printf 'Installed %s\nOpen it from Launchpad or Spotlight; it updates to the latest main build on every launch.\n' "$app"
+    # Desktop shortcut: a symlink Finder opens like the app itself.
+    desktop_dir="$HOME/Desktop"
+    if [ -d "$desktop_dir" ]; then
+      rm -rf "$desktop_dir/Amber Roads.app"
+      ln -s "$app" "$desktop_dir/Amber Roads.app"
+    fi
+    printf 'Installed %s with a shortcut on your Desktop.\nDouble-click it; it updates to the latest main build on every launch.\n' "$app"
     ;;
   Linux)
     bin_dir="$HOME/.local/bin"
@@ -52,7 +58,12 @@ Exec=$bin_dir/amber-roads
 Terminal=false
 Categories=Game;
 DESKTOP
-    printf 'Installed %s and a menu entry.\nRun amber-roads; it updates to the latest main build on every launch.\n' "$bin_dir/amber-roads"
+    desktop_dir=$(xdg-user-dir DESKTOP 2>/dev/null || printf '%s' "$HOME/Desktop")
+    if [ -d "$desktop_dir" ]; then
+      cp "$apps_dir/amber-roads.desktop" "$desktop_dir/amber-roads.desktop"
+      chmod +x "$desktop_dir/amber-roads.desktop"
+    fi
+    printf 'Installed %s with menu and Desktop entries.\nRun amber-roads; it updates to the latest main build on every launch.\n' "$bin_dir/amber-roads"
     ;;
   *)
     echo 'On Windows, use launcher/install-windows.ps1 instead.' >&2

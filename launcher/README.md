@@ -10,7 +10,7 @@ Every push to `main` bundles the game for macOS (Apple Silicon and Intel), Windo
 curl -fsSL https://raw.githubusercontent.com/Chillysoop/amber-roads/main/launcher/install.sh | sh
 ```
 
-This creates `~/Applications/Amber Roads.app`. Open it from Launchpad or Spotlight, or drag it to the Dock.
+This creates `~/Applications/Amber Roads.app` and an **Amber Roads** shortcut on your Desktop. Double-click either one (or open it from Launchpad or Spotlight) and it updates before starting.
 
 **Windows** (PowerShell):
 
@@ -20,7 +20,7 @@ irm https://raw.githubusercontent.com/Chillysoop/amber-roads/main/launcher/insta
 
 This adds Amber Roads to the Start menu and desktop.
 
-**Linux**: the same `install.sh` command as macOS. It adds `~/.local/bin/amber-roads` and a menu entry.
+**Linux**: the same `install.sh` command as macOS. It adds `~/.local/bin/amber-roads` plus menu and Desktop entries.
 
 ## About unsigned builds
 
