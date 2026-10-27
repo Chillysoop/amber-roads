@@ -36,6 +36,11 @@ function M.build(data)
         end
     end
     map.start = assert(map.places[data.start], "Unknown start place")
+    map.markets = {}
+    for id, levels in pairs(data.markets or {}) do
+        assert(map.places[id] and map.places[id].kind == "city", "Markets belong to cities: " .. id)
+        map.markets[id] = levels
+    end
     return map
 end
 

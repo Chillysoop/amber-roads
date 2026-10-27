@@ -17,14 +17,21 @@ return {
         Caravan.turn(c, "steppe")
         assert(c.haulers == 0)
     end },
-    { "a refill ends thirst and fills to capacity", function()
-        local c = Caravan.new({ water = 0, thirst = 3 })
-        Caravan.refill(c, "well")
-        assert(c.water == c.water_max and c.thirst == 0)
-        local before = c.provisions
-        c.provisions = 1
-        Caravan.refill(c, "well")
-        assert(c.provisions == 1 and before == 60, "wells only give water")
+    { "a well gives free water and ends thirst, but nothing else", function()
+        local c = Caravan.new({ water = 0, thirst = 3, provisions = 1 })
+        local spent = Caravan.restock(c, "well")
+        assert(spent == 0 and c.water == c.water_max and c.thirst == 0)
+        assert(c.provisions == 1, "wells only give water")
+    end },
+    { "restocking charges the place's prices and stops when coin runs out", function()
+        local c = Caravan.new({ water = 20, fodder = 40, provisions = 60, coin = 100 })
+        local spent = Caravan.restock(c, "city")
+        assert(spent == 20 and c.coin == 80 and c.water == 60, spent)
+        c.water, c.fodder, c.coin = 0, 0, 30
+        local log = {}
+        local _, short = Caravan.restock(c, "waystation", log)
+        assert(short and c.coin < 1 and c.water == 30 and c.fodder == 0, c.water .. " " .. c.fodder)
+        assert(log[1].kind == "warning")
     end },
     { "losing draft beasts slows the caravan", function()
         local c = Caravan.new()

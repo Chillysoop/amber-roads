@@ -25,6 +25,7 @@ function M.new(overrides)
         fodder = 40, fodder_max = 40,
         condition = 100, morale = 70,
         thirst = 0, hunger = 0, starving = 0,
+        coin = 300, cargo = {},
     }
     for k, v in pairs(overrides or {}) do c[k] = v end
     return c
@@ -33,7 +34,18 @@ end
 function M.copy(c)
     local out = {}
     for k, v in pairs(c) do out[k] = v end
+    out.cargo = {}
+    for k, v in pairs(c.cargo or {}) do out.cargo[k] = v end
     return out
+end
+
+-- Each wagon carries this many units of trade goods or sealed crates.
+M.cargo_per_wagon = 10
+function M.capacity(c) return c.wagons * M.cargo_per_wagon end
+function M.cargo_used(c)
+    local n = 0
+    for _, v in pairs(c.cargo) do n = n + v end
+    return n
 end
 
 local function tenth(x) return math.floor(x * 10 + 0.5) / 10 end
@@ -108,30 +120,45 @@ function M.turn(c, terrain_id, log)
     return log
 end
 
--- What each kind of place restores. Cities will charge coin once trade exists.
-M.refills = {
-    city = { water = true, fodder = true, provisions = true, morale = 10 },
-    waystation = { water = true, fodder = true, morale = 3 },
-    well = { water = true },
+-- What each kind of place sells, in coin per unit, and the morale a stop gives.
+-- Cities are cheapest; waystations charge for being the only water for days.
+M.supply_prices = {
+    city = { water = 0.5, fodder = 0.8, provisions = 1.0, morale = 10 },
+    waystation = { water = 1.0, fodder = 1.5, morale = 3 },
+    well = { water = 0 },
 }
+local RESTOCK_ORDER = { "water", "fodder", "provisions" }
+local RESET = { water = "thirst", fodder = "hunger", provisions = "starving" }
 
-function M.refill(c, kind, log)
-    local r = M.refills[kind]
-    if not r then return false end
-    local changed = false
-    for _, res in ipairs({ "water", "fodder", "provisions" }) do
-        if r[res] and c[res] < c[res .. "_max"] then
-            c[res] = c[res .. "_max"]; changed = true
+-- Tops up what the place sells, paying its prices, water first.
+-- Returns the coin spent and whether anything was left short for lack of coin.
+function M.restock(c, kind, log)
+    local prices = M.supply_prices[kind]
+    if not prices then return 0, false end
+    local spent, short = 0, false
+    for _, res in ipairs(RESTOCK_ORDER) do
+        local price = prices[res]
+        local need = c[res .. "_max"] - c[res]
+        if price and need > 0 then
+            local buy = need
+            if price > 0 then buy = math.min(need, math.floor(c.coin / price)) end
+            if buy < need then short = true end
+            local cost = math.ceil(buy * price - 1e-9)
+            c.coin = c.coin - cost
+            c[res] = tenth(c[res] + buy)
+            spent = spent + cost
         end
-        if r[res] then
-            if res == "water" then c.thirst = 0 end
-            if res == "fodder" then c.hunger = 0 end
-            if res == "provisions" then c.starving = 0 end
+        if price and c[res] > 0 then c[RESET[res]] = 0 end
+    end
+    if prices.morale then morale(c, prices.morale) end
+    if log then
+        if short then
+            log[#log + 1] = { kind = "warning", text = string.format("Could not afford a full restock (spent %d coin).", spent) }
+        elseif spent > 0 then
+            log[#log + 1] = { kind = "refill", text = string.format("Restocked for %d coin.", spent) }
         end
     end
-    if r.morale then morale(c, r.morale) end
-    if log and changed then log[#log + 1] = { kind = "refill", text = "Supplies restocked." } end
-    return changed
+    return spent, short
 end
 
 return M

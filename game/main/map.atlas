@@ -1,4 +1,5 @@
 images { image: "/assets/hex.png" }
 images { image: "/assets/dot.png" }
+images { image: "/assets/panel.png" }
 margin: 2
 extrude_borders: 2

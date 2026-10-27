@@ -2,7 +2,7 @@
 -- Pass suite names in AMBER_TEST_SUITES to run only some of them.
 local M = {}
 
-M.suites = { "hex", "world_map", "caravan", "route", "travel" }
+M.suites = { "hex", "world_map", "caravan", "route", "travel", "market", "contracts" }
 
 function M.run()
     local only = {}

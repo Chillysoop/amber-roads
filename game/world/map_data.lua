@@ -37,4 +37,13 @@ return {
         { "corrund", "ashfall" },
     },
     start = "corrund",
+    -- Supply levels on the 10-step scale (1 big surplus, 10 desperate).
+    -- Corrund quarries iron and buys amber cheaply from jungle cutters;
+    -- Talonmere's brokers ship amber abroad and land sea salt and spice;
+    -- Ashfall Wells is cattle-and-hide country that needs everything else.
+    markets = {
+        corrund = { amber = 1, ironwork = 1, salt = 6, hides = 6, spice = 8 },
+        talonmere = { amber = 9, ironwork = 7, salt = 2, hides = 7, spice = 2 },
+        ashfall = { amber = 4, ironwork = 9, salt = 5, hides = 1, spice = 7 },
+    },
 }

@@ -5,6 +5,8 @@ local WorldMap = require "world.world_map"
 local Terrain = require "world.terrain"
 local Caravan = require "world.caravan"
 local Travel = require "world.travel"
+local Market = require "world.market"
+local Contracts = require "world.contracts"
 
 local SIZE = 28                    -- hex radius in pixels
 local ORIGIN = vmath.vector3(56, 664, 0) -- centre of the top-left hex
@@ -21,6 +23,13 @@ local TEXT = vmath.vector4(0.93, 0.89, 0.80, 1)
 local DIM_TEXT = vmath.vector4(0.70, 0.66, 0.58, 1)
 local WARN = vmath.vector4(0.96, 0.52, 0.38, 1)
 local ROUTE = vmath.vector4(0.98, 0.84, 0.40, 0.9)
+local BUTTON = vmath.vector4(0.36, 0.27, 0.18, 1)
+local BUTTON_OFF = vmath.vector4(0.20, 0.18, 0.16, 1)
+local CITY_Y = 470                 -- top of the city panel, where the route plan goes otherwise
+local ROW = 21
+local SMALL = 0.75
+-- Short supply tags for the market table, one per level on the 10-step scale.
+local SUPPLY_TAGS = { "glut", "surplus", "surplus", "plenty", "even", "even", "wanted", "wanted", "scarce", "dire" }
 
 local function screen(h)
     local x, y = Hex.to_pixel(h.q, h.r, SIZE)
@@ -87,6 +96,143 @@ local function resource_line(name, value, max, warn)
     return string.format("%-11s %s / %s%s", name, fmt(value), fmt(max), warn and "  !" or "")
 end
 
+-- Buttons are boxes with a label; on_click runs when an active one is clicked.
+local function button(self, x, y, w, label, on_click)
+    local centre = vmath.vector3(x + w / 2, y - 9, 0)
+    local b = { node = box(centre, w, 18, "panel", BUTTON), on_click = on_click }
+    b.label = text(centre, label, TEXT, gui.PIVOT_CENTER, SMALL)
+    self.buttons[#self.buttons + 1] = b
+    return b
+end
+
+local function show_button(b, visible, active, label)
+    b.visible, b.active = visible, visible and active
+    gui.set_enabled(b.node, visible)
+    gui.set_enabled(b.label, visible)
+    if label then gui.set_text(b.label, label) end
+    gui.set_color(b.node, b.active and BUTTON or BUTTON_OFF)
+    gui.set_color(b.label, b.active and TEXT or DIM_TEXT)
+end
+
+local function say(self, s) self.city.notice = s end
+
+local function build_city(self)
+    local x, y = PANEL_X, CITY_Y
+    local city = { rows = {}, offers = {}, nodes = {} }
+    self.city = city
+    city.title = text(vmath.vector3(x, y, 0), "", TEXT)
+    city.header = text(vmath.vector3(x, y - 24, 0), string.format("%-10s %3s %4s %4s", "Good", "buy", "sell", "held"), DIM_TEXT, nil, SMALL)
+    for i, g in ipairs(Market.goods) do
+        local ry = y - 24 - i * ROW
+        local function trade(sell, n)
+            return function()
+                local m, c, id = self.state.market, self.state.caravan, Travel.city(self.state).id
+                if sell then
+                    local k, coin = Market.sell(m, c, id, g.id, n)
+                    say(self, string.format("Sold %d %s for %d coin.", k, g.name:lower(), coin))
+                else
+                    local k, coin = Market.buy(m, c, id, g.id, n)
+                    say(self, k > 0 and string.format("Bought %d %s for %d coin.", k, g.name:lower(), coin)
+                        or "No coin or no wagon space for that.")
+                end
+            end
+        end
+        city.rows[i] = {
+            good = g,
+            line = text(vmath.vector3(x, ry, 0), "", TEXT, nil, SMALL),
+            buy = button(self, 1076, ry + 2, 44, "Buy", trade(false, 1)),
+            buy5 = button(self, 1124, ry + 2, 44, "Buy 5", trade(false, 5)),
+            sell = button(self, 1172, ry + 2, 44, "Sell", trade(true, 1)),
+            sell_all = button(self, 1220, ry + 2, 50, "Sell all", trade(true, 999)),
+        }
+    end
+    local sy = y - 24 - (#Market.goods + 1) * ROW - 6
+    city.services = text(vmath.vector3(x, sy, 0), "Services", DIM_TEXT, nil, SMALL)
+    city.repair = button(self, 960, sy + 2, 100, "", function()
+        local ok, cost = Market.repair(self.state.caravan)
+        say(self, ok and string.format("Wagons repaired for %d coin.", cost) or "Not enough coin to repair.")
+    end)
+    city.guard = button(self, 1064, sy + 2, 100, "", function()
+        Market.hire(self.state.caravan, "guard")
+        say(self, "A new guard signs on.")
+    end)
+    city.horse = button(self, 1168, sy + 2, 102, "", function()
+        Market.hire(self.state.caravan, "horse")
+        say(self, "You buy a horse.")
+    end)
+    local cy = sy - ROW - 8
+    city.contracts = text(vmath.vector3(x, cy, 0), "Contracts on offer", DIM_TEXT, nil, SMALL)
+    for i = 1, Contracts.tuning.offers_per_city do
+        local oy = cy - i * ROW
+        local entry = { line = text(vmath.vector3(x, oy, 0), "", TEXT, nil, SMALL) }
+        entry.take = button(self, 1220, oy + 2, 50, "Take", function()
+            local ok, why = Contracts.accept(self.state, entry.offer)
+            say(self, ok and string.format("Loaded %d sealed crates.", entry.offer.crates) or why .. ".")
+        end)
+        city.offers[i] = entry
+    end
+    local ay = cy - (Contracts.tuning.offers_per_city + 1) * ROW - 4
+    city.active = text(vmath.vector3(x, ay, 0), "", DIM_TEXT, nil, SMALL)
+    city.footer = text(vmath.vector3(x, 60, 0), "", DIM_TEXT, nil, SMALL)
+    gui.set_size(city.footer, vmath.vector3(390, 80, 0))
+    gui.set_line_break(city.footer, true)
+    city.texts = { city.title, city.header, city.services, city.contracts, city.active, city.footer }
+    for _, r in ipairs(city.rows) do city.texts[#city.texts + 1] = r.line end
+    for _, o in ipairs(city.offers) do city.texts[#city.texts + 1] = o.line end
+end
+
+local function refresh_city(self, visible)
+    local city, s = self.city, self.state
+    for _, n in ipairs(city.texts) do gui.set_enabled(n, visible) end
+    if not visible then
+        for _, b in ipairs(self.buttons) do show_button(b, false) end
+        city.notice = nil
+        return
+    end
+    local here, m, c = Travel.city(s), s.market, s.caravan
+    local space = Caravan.capacity(c) - Caravan.cargo_used(c)
+    gui.set_text(city.title, here.name .. " market")
+    for _, row in ipairs(city.rows) do
+        local id = row.good.id
+        local trades = Market.trades(m, here.id, id)
+        local held = c.cargo[id] or 0
+        if trades then
+            local buy, sell = Market.buy_price(m, here.id, id), Market.sell_price(m, here.id, id)
+            gui.set_text(row.line, string.format("%-10s %3d %4d %4d %s", row.good.name, buy, sell, held,
+                SUPPLY_TAGS[m.cities[here.id][id].level]))
+            show_button(row.buy, true, c.coin >= buy and space > 0)
+            show_button(row.buy5, true, c.coin >= buy and space > 0)
+            show_button(row.sell, true, held > 0)
+            show_button(row.sell_all, true, held > 0)
+        else
+            gui.set_text(row.line, string.format("%-10s   -    - %4d", row.good.name, held))
+            for _, k in ipairs({ "buy", "buy5", "sell", "sell_all" }) do show_button(row[k], true, false) end
+        end
+    end
+    local repair = Market.repair_cost(c)
+    show_button(city.repair, true, repair > 0 and c.coin >= repair, repair > 0 and string.format("Repair %d", repair) or "Wagons sound")
+    show_button(city.guard, true, c.coin >= Market.services.guard.price, string.format("Guard %d", Market.services.guard.price))
+    show_button(city.horse, true, c.coin >= Market.services.horse.price, string.format("Horse %d", Market.services.horse.price))
+    for i, entry in ipairs(city.offers) do
+        local o = s.contracts.offers[i]
+        entry.offer = o
+        if o then
+            gui.set_text(entry.line, string.format("%d crates to %s by turn %d: %d coin", o.crates, s.map.places[o.to].name, o.deadline, o.reward))
+            show_button(entry.take, true, (Contracts.can_accept(s, o)))
+        else
+            gui.set_text(entry.line, i == 1 and "None left this visit." or "")
+            show_button(entry.take, false)
+        end
+    end
+    local active = {}
+    for _, o in ipairs(s.contracts.active) do
+        active[#active + 1] = string.format("Carrying %d crates to %s, due turn %d", o.crates, s.map.places[o.to].name, o.deadline)
+    end
+    gui.set_text(city.active, table.concat(active, "\n"))
+    gui.set_text(city.footer, (city.notice and city.notice .. "\n" or "") ..
+        "Leaving restocks water, fodder and provisions at city prices. Click a hex to plan a route.")
+end
+
 local function refresh_panel(self)
     local s, c = self.state, self.state.caravan
     local lines = {
@@ -95,15 +241,19 @@ local function refresh_panel(self)
         resource_line("Water", c.water, c.water_max, c.thirst > 0),
         resource_line("Provisions", c.provisions, c.provisions_max, c.starving > 0),
         resource_line("Fodder", c.fodder, c.fodder_max, c.hunger > 0),
-        string.format("%-11s %s", "Morale", fmt(c.morale)),
-        string.format("%-11s %s%%", "Wagons", fmt(c.condition)),
+        string.format("%-11s %-6s Wagons %s%%", "Morale", fmt(c.morale), fmt(c.condition)),
         string.format("%-11s %d crew, %d horses, %d hauler", "Company", c.crew, c.horses, c.haulers),
+        string.format("%-11s %-6d Cargo %d / %d", "Coin", c.coin, Caravan.cargo_used(c), Caravan.capacity(c)),
         Caravan.slowed(c) and "Too few draft beasts: every hex costs +1 turn" or "",
     }
     gui.set_text(self.status, table.concat(lines, "\n"))
 
     local r = s.route
-    if r then
+    local in_city = Travel.city(s) and not r and not self.travelling
+    refresh_city(self, in_city)
+    if in_city then
+        gui.set_text(self.plan, "")
+    elseif r then
         local p = r.preview
         local plan = {
             string.format("Route to %s  (%s)", Travel.known_place(s, r.goal) and r.goal.place.name or Terrain.get(r.goal.terrain).name,
@@ -149,7 +299,7 @@ function init(self)
     self.mode = "fastest"
     self.timer = 0
     self.travelling = false
-    self.hexes, self.places, self.route_nodes = {}, {}, {}
+    self.hexes, self.places, self.route_nodes, self.buttons = {}, {}, {}, {}
 
     local w, h = Hex.SQRT3 * SIZE, 2 * SIZE
     for _, hx in ipairs(self.state.map.list) do
@@ -170,6 +320,7 @@ function init(self)
     gui.set_line_break(self.plan, true)
     self.hover = text(vmath.vector3(40, 205, 0), "", DIM_TEXT)
     self.log = text(vmath.vector3(40, 180, 0), "", DIM_TEXT)
+    build_city(self)
     refresh(self)
 end
 
@@ -203,6 +354,12 @@ function on_input(self, action_id, action)
     if not action.pressed or self.travelling then return end
     local route = self.state.route
     if action_id == hash("click") then
+        for _, b in ipairs(self.buttons) do
+            if b.visible and gui.pick_node(b.node, action.x, action.y) then
+                if b.active then b.on_click(); refresh(self) end
+                return true
+            end
+        end
         local h = to_hex(self, action.x, action.y)
         if not h then return end
         if route and route.goal == h then self.travelling = true; self.timer = 0
