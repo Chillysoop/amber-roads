@@ -1,0 +1,66 @@
+name: Desktop build
+
+# Every push to main bundles the game for macOS, Windows and Linux and
+# replaces the files on the rolling "main-latest" release. The launchers in
+# launcher/ read build.txt from that release on each start and update.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: true
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for a Defold project
+        id: project
+        run: |
+          if [ -f game/game.project ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No game/game.project on this commit yet; nothing to bundle."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Cache Defold tools
+        if: steps.project.outputs.present == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .local-tools
+          key: defold-tools-${{ runner.os }}-${{ hashFiles('scripts/defold.sh') }}
+
+      - name: Run tests
+        if: steps.project.outputs.present == 'true'
+        run: ./scripts/defold.sh test
+
+      - name: Bundle all desktop platforms
+        if: steps.project.outputs.present == 'true'
+        run: ./scripts/package-desktop.sh dist/release
+
+      - name: Publish to the main-latest release
+        if: steps.project.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          tag=main-latest
+          git tag -f "$tag" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$tag"
+          notes="Rolling build of main at ${GITHUB_SHA}. Install the self-updating launcher instead of downloading these by hand: see launcher/README.md."
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --prerelease --title "Latest main build" --notes "$notes"
+          else
+            gh release create "$tag" --prerelease --title "Latest main build" --notes "$notes" --verify-tag
+          fi
+          # Zips first, build.txt last, so launchers never see a commit whose zips aren't up yet.
+          gh release upload "$tag" dist/release/amber-roads-*.zip --clobber
+          gh release upload "$tag" dist/release/build.txt --clobber
